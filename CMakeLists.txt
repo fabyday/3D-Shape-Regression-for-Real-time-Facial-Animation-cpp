@@ -70,23 +70,41 @@ set(src
 src/main.cpp 
 src/cameraPlugin.cpp
 src/Fern.cpp src/cascade_regressor.cpp src/cnpy.cpp src/dataset.cpp src/weak_regressor.cpp
+src/gaussian_mixture_model.cpp
 )
+set(viewer_src
+src/viewer.cpp 
+src/cnpy.cpp 
 
+)
+set(network_cpp
+src/network_test.cpp 
+src/cnpy.cpp 
+
+)
 set(main2_video_src
 src/main2.cpp 
 src/cameraPlugin.cpp
+src/gaussian_mixture_model.cpp
 src/Fern.cpp src/cascade_regressor.cpp src/cnpy.cpp src/dataset.cpp src/weak_regressor.cpp
 )
 set(header 
 	#src/Fern.h
 
 )
+set(bshape_anim 
+	#src/Fern.h
+	src/view_blendshapes_anim_main.cpp  src/cnpy.cpp 
+	src/gaussian_mixture_model.cpp
+)
 set(helper_src "src/cv_compatible_helper.cpp" "src/cv_compatible_helper.h")
 add_library(cv_compatible ${helper_src})
 target_link_libraries(cv_compatible ${OpenCV_LIBS} Eigen3::Eigen)
 add_executable(facecapture ${src} ${header} )
 add_executable(facecapture_video ${main2_video_src} ${header} )
-
+add_executable(viewer ${viewer_src} ${header} )
+add_executable(network_cpp ${network_cpp} ${header} )
+add_executable(pre_anim_bshape ${bshape_anim} ${header} )
 
 
 
@@ -97,6 +115,9 @@ if(KinectSDK2_FOUND)
 	target_link_libraries(facecapture PUBLIC dlib::dlib  cv_compatible igl::core igl::glfw ${OpenCV_LIBS}  ${KinectSDK2_LIBRARIES})
 	add_custom_command( TARGET facecapture POST_BUILD ${KinectSDK2_COMMANDS} )
 	
+	target_link_libraries(viewer PUBLIC PUBLIC dlib::dlib  cv_compatible igl::core igl::glfw ${OpenCV_LIBS}  ${KinectSDK2_LIBRARIES})
+	target_link_libraries(network_cpp PUBLIC PUBLIC dlib::dlib  cv_compatible igl::core igl::glfw ${OpenCV_LIBS}  ${KinectSDK2_LIBRARIES})
+	target_link_libraries(pre_anim_bshape PUBLIC PUBLIC dlib::dlib  cv_compatible igl::core igl::glfw ${OpenCV_LIBS}  ${KinectSDK2_LIBRARIES})
 	
 	
 	

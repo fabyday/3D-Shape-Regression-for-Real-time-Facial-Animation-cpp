@@ -10,8 +10,8 @@
 #include "constants.h"
 #include "math.h"
 #include "cameraPlugin.h"
-
-
+#include "network.h"
+#include "gaussian_mixture_model.h"
 int main() {
 
 	CascadeRegressor cascade_reg;
@@ -37,6 +37,17 @@ int main() {
 	cascade_reg.set_68landmark_index(full_lmk_idx);
 	cascade_reg.set_autogen_lmk_index(lmk_idx);
 
+	BLendshapes_GMM gmm_model;
+	gmm_model.load("D:\\lab\\2022\\mycode\\3D-Shape-Regression-for-Real-time-Facial-Animation\\precompute_blendshapes_gmm\\win5");
+	FicalTrackingParams ficial_params(bl, lmk_idx, &gmm_model);
+	
+
+	networkCtx Clientctx;
+	CProcessInfo viewerCtx;
+	create_child_viewer(viewerCtx);
+	create_client_socket(Clientctx);
+	std::cout << "create viwer" << std::endl;
+	std::cout << "create send socket" << std::endl;
 
 
 
@@ -65,6 +76,7 @@ int main() {
 	Eigen::MatrixXd identity = Eigen::MatrixXd::Identity(3, 4);
 	std::string name = "test";
 	cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.0, cv::Size(40, 40));
+	Eigen::VectorXd result_bl;
 
 
 	while (true) {
@@ -79,7 +91,6 @@ int main() {
 			return 0;
 		}
 		//if (frame.empty()) {
-		//	std::cerr << "fuck this is shit." << std::endl;
 		//	break;
 		//}
 
@@ -105,8 +116,29 @@ int main() {
 		
 		cvrt_camera_uv_coord(pts2d, frame.rows, pts2d);
 		cv::Mat t;
-		for (int i = 0; i < pts2d.rows(); i++)
-			cv::circle(frame, cv::Point(pts2d(i, 0), pts2d(i, 1)), 1, cv::Scalar(0, 255, 0), 2);
+		for (int i = 0; i < pts2d.rows(); i++) {
+
+			//cv::circle(frame, cv::Point(pts2d(i, 0), pts2d(i, 1)), 1, cv::Scalar(0, 255, 0), 2);
+		}
+		Eigen::MatrixXd Rt(3, 4);
+		FaceTracking(pts, ficial_params, result_bl, &Rt);
+		Eigen::MatrixXd outs;
+		Eigen::MatrixXd outs2;
+		ficial_params.blend(result_bl, outs);
+		
+		add_to_pts(Q, Rt, outs, outs2);
+		cvrt_camera_uv_coord(outs2, frame.rows, outs2);
+		//std::cout << result_bl.transpose() << std::endl;
+
+		for (int i = 0; i < pts2d.rows(); i++) {
+
+			cv::circle(frame, cv::Point(outs2(i, 0), outs2(i, 1)), 1, cv::Scalar(255, 0, 0), 2);
+		}
+
+
+		//result_bl.setZero();
+		send_blendshapes(result_bl, Clientctx);
+		//std::cout << result_bl << std::endl;
 
 		
 		cv::imshow("live", frame);

@@ -12,6 +12,9 @@
 #include "cameraPlugin.h"
 #include <utility>
 
+
+#include "network.h"
+
 int main() {
 
 	CascadeRegressor cascade_reg;
@@ -40,16 +43,30 @@ int main() {
 	cascade_reg.set_autogen_lmk_index(lmk_idx);
 
 
+	BLendshapes_GMM gmm_model;
+	gmm_model.load("D:\\lab\\2022\\mycode\\3D-Shape-Regression-for-Real-time-Facial-Animation\\precompute_blendshapes_gmm\\win5");
+	FicalTrackingParams ficial_params(bl, lmk_idx, &gmm_model);
 
 
+	networkCtx Clientctx;
+
+	CProcessInfo viewerCtx;
+	create_child_viewer(viewerCtx);
+	create_client_socket(Clientctx);
+	std::cout << "create viwer" << std::endl;
+	std::cout << "create send socket" << std::endl;
+
+
+	
 	/// camera
 	wow::CameraPlugin cam;
 	cam.initCamera();
 
 
 
-	cv::Mat frame, raw_gray, gray;
 
+
+	cv::Mat frame, raw_gray, gray;
 	cv::VideoCapture cap("D:\\lab\\2022\\mycode\\3D-Shape-Regression-for-Real-time-Facial-Animation\\video\\face9.mp4");
 	//int deviceID = 0; // 0 = open default camera
 	//int apiID = cv::CAP_ANY; // 0 = autodetect default API
@@ -71,6 +88,8 @@ int main() {
 	std::string name = "test";
 	cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(10.0, cv::Size(8, 8));
 	cv::Mat frame2, frame_tmp;
+	Eigen::VectorXd result_bl;
+
 	while (true) {
 	
 		cam.render( frame);
@@ -111,6 +130,9 @@ int main() {
 			for (int i = 0; i < pts2d.rows(); i++)
 				cv::circle(frame2, cv::Point(pts2d(i, 0), pts2d(i, 1)), 2, cv::Scalar(0, 255, 0));
 
+			FaceTracking(pts, ficial_params, result_bl);
+			send_blendshapes(result_bl, Clientctx);
+			std::cout << result_bl << std::endl <<std::endl;
 
 		}
 		cv::imshow("live", frame2);

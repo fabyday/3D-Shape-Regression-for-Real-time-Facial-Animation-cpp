@@ -5,6 +5,8 @@
 #include <vector>
 #include <algorithm>
 #include <Eigen/Dense>
+#include <Eigen/Geometry>
+
 
 
 
@@ -682,4 +684,243 @@ inline void find_most_similar_to_target_pose(const std::vector<Eigen::MatrixXd>&
 
 
 
+}
+
+
+
+
+
+
+#include "gaussian_mixture_model.h"
+
+class FacialTrackFunctor {
+
+
+	Eigen::MatrixXd* Rt;
+	 FicalTrackingParams* bshapes;
+	BLendshapes_GMM* gmm;
+	Eigen::MatrixXd lmk3d;
+	bool penalty;
+public:
+	FacialTrackFunctor( FicalTrackingParams* bl, Eigen::MatrixXd lmk3d) {
+		bshapes = bl;
+		this->lmk3d = lmk3d;
+		if (bl->m_gmm == nullptr) {
+			penalty = false;
+		}
+		else {
+			penalty = true;
+		}
+	}
+	void update_Rt(Eigen::MatrixXd* Rt) {
+		this->Rt = Rt;
+
+	}
+
+	inline bool blendshape_penalty_gradient(const Eigen::VectorXd& w, Eigen::VectorXd& grad_out) {
+
+		Eigen::VectorXd prev_w;
+		if (bshapes->get_window(prev_w)) {
+			prev_w.tail(bshapes->m_gmm->coeff_size()) = w;
+			bshapes->m_gmm->penalty_gradient(prev_w, grad_out);
+			return true;
+		
+		}
+		return false;
+			
+	}
+	inline bool blendshape_penalty(const Eigen::VectorXd& w, double& out) {
+
+		Eigen::VectorXd prev_w;
+		bool flag = false;
+		if (bshapes->get_window(prev_w)) {
+			prev_w.tail(bshapes->m_gmm->coeff_size()) = w;
+			out = bshapes->m_gmm->penalty_term(prev_w);
+			flag = true;
+		}
+		return flag;
+
+	}
+
+	inline double cost_f(const Eigen::VectorXd& w) {
+		Eigen::Map<Eigen::VectorXd> neutral(bshapes->m_neutral.data(), bshapes->m_neutral.size()); // N x 1 
+
+		int v_size = bshapes->m_neutral.rows();
+		auto B = bshapes->m_pose; // N x E(Expr_size)
+
+		Eigen::MatrixXd bshape_by_w = (neutral + B * w);
+		Eigen::Map<Eigen::MatrixXd> unflat_bshape(bshape_by_w.data(), bshapes->m_neutral.rows(), 3);
+		Eigen::MatrixXd uf = unflat_bshape;
+		Eigen::MatrixXd rot = Rt->topLeftCorner(3, 3);
+		Eigen::VectorXd trans = Rt->topRightCorner(3, 1);
+		Eigen::MatrixXd rx;
+
+
+		
+		add_to_pts(*Rt, uf, rx);
+		//Eigen::MatrixXd res = ((rot * unflat_bshape.transpose()).colwise() + trans).transpose() - lmk3d;
+		Eigen::MatrixXd res = rx - lmk3d;
+		Eigen::Map<Eigen::VectorXd> tmp_res(res.data(), res.size());
+		
+		return tmp_res.transpose().dot(tmp_res);
+	}
+	inline void main_term_graident(const Eigen::VectorXd& w, Eigen::VectorXd& grad) {
+		Eigen::VectorXd g_w(w);
+		Eigen::VectorXd r_eps_w(w);
+		double eps = 10e-6;
+		for (int i = 0; i < w.size(); i++) {
+			double orig = g_w(i);
+			g_w(i) = orig - eps;
+			double l_loss = cost_f(g_w);
+			g_w(i) = orig + eps;
+			double r_loss = cost_f(g_w);
+			double grad_i = (r_loss - l_loss) / (2 * eps);
+			grad(i) = grad_i;
+			g_w(i) = orig;
+		}
+	}
+
+
+
+	double operator() (const Eigen::VectorXd& w, Eigen::VectorXd& grad) {
+		Eigen::Map<Eigen::VectorXd> neutral(bshapes->m_neutral.data(), bshapes->m_neutral.size()); // N x 1 
+
+		// grad := (2*B.T*R.T*(t-Lmk) + 2*neutral.T * B + 2*B.T *B * w)
+		int v_size = bshapes->m_neutral.rows();
+		auto B = bshapes->m_pose; // N x E(Expr_size)
+		Eigen::MatrixXd rot = Rt->topLeftCorner(3, 3);
+		Eigen::VectorXd trans = Rt->topRightCorner(3, 1);
+		Eigen::VectorXd term1 = 2 * neutral.transpose() * B;
+		Eigen::VectorXd term2 = 2*B.transpose() * B*w;
+
+		Eigen::MatrixXd t_lmk = lmk3d;
+		t_lmk.rowwise() -= trans.transpose();
+		Eigen::MatrixXd r_lmk = (rot.transpose() * (- t_lmk.transpose())).transpose();
+		Eigen::Map<Eigen::VectorXd> flat_lmk(r_lmk.data(), r_lmk.size());
+		
+		Eigen::VectorXd term3 = 2*B.transpose()*flat_lmk;
+		grad = term1 + term2 + term3;
+
+
+		double penalty_cost = 0.0;
+		if (penalty == true) {
+			Eigen::VectorXd penalty;
+
+			if (this->blendshape_penalty_gradient(w, penalty)) {
+				std::cout << "penalty" << penalty << std::endl;
+				grad += 0.01 * penalty;
+			}
+			if (this->blendshape_penalty(w, penalty_cost)) {
+				
+			}
+		}
+			
+			return cost_f(w) + 0.01* penalty_cost ;
+		
+
+
+		
+		//return x;
+
+	}
+};
+
+
+inline void TransformInterpolation(TransformRecord& bl, const Eigen::MatrixXd& Rt, Eigen::MatrixXd& out , double H = 1.0) {
+
+
+	Eigen::Quaterniond current_quat(Rt.topLeftCorner<3,3>().matrix() );
+	Eigen::MatrixXd current_trans(Rt.topRightCorner<3, 1>());
+	bl.push_prev_transform(current_trans, current_quat);
+	Eigen::MatrixXd test = current_quat.toRotationMatrix();
+	int window_size, stack_size, cur_idx;
+	bl.get_info(window_size, stack_size, cur_idx);
+	int length = window_size > stack_size ? stack_size : window_size ;
+	double max = 0;
+	double max_idx = -1;
+	//rot max_norm
+	for (int i = cur_idx; i > (cur_idx - length) % window_size; i--) {
+		double norm = (current_quat.vec() - bl.m_prev_rotations[i].vec()).squaredNorm();
+		if (max < norm) {
+			max = norm;
+			max_idx = i;
+		}
+	}
+	Eigen::VectorXd rot = Eigen::VectorXd::Zero(4);
+	double wj_sum = 0.0;
+	for (int j = cur_idx; length; j=(j - 1)%window_size ) {
+		
+		 rot += bl.m_prev_rotations[j].vec() * exp(-j * H * max);
+		 wj_sum += exp(-j * H * max);
+	}
+	rot /= wj_sum; // new t_i*;
+
+	
+	// trans maxnorm
+	for (int i = cur_idx; i < (cur_idx + length) % window_size; i++) {
+		double norm = (current_trans - bl.m_prev_translations[i]).squaredNorm();
+		if (max < norm) {
+			max = norm;
+			max_idx = i;
+		}
+	}
+	Eigen::MatrixXd trans = Eigen::MatrixXd::Zero(3, 1);
+	wj_sum = 0.0;
+	for (int j = cur_idx; length; j = (j - 1) % window_size) {
+
+		trans += bl.m_prev_translations[j] * exp(-j * H * max);
+		wj_sum += exp(-j * H * max);
+	}
+	trans /= wj_sum; // new t_i*;
+	Eigen::Quaterniond new_rot(rot.data());
+	bl.update_prev_transform(trans, new_rot);
+	out.conservativeResize(3, 4);
+	out.topRightCorner<3, 3>() = new_rot.toRotationMatrix();
+	out.topLeftCorner<3, 1>() = trans;
+}
+
+inline void FaceTracking(const Eigen::MatrixXd& lmk3d, FicalTrackingParams& bl, 
+	Eigen::VectorXd& result, Eigen::MatrixXd* Rt =nullptr, 
+	const int iteration = 2 ) {
+
+	Eigen::MatrixXd prev_bl;
+	Eigen::MatrixXd Cb;
+	Eigen::Matrix3d R;
+	
+	FacialTrackFunctor f(&bl, lmk3d);
+
+	LBFGSpp::LBFGSBParam param;
+	Eigen::Quaterniond quat;
+	LBFGSpp::LBFGSBSolver svlr(param);
+	Eigen::VectorXd x;
+	bl.get_prev_coeff(x);
+	double fx;
+	Eigen::VectorXd lb, ub;
+
+	lb.setConstant(bl.get_blendshape_weight_size(), 0);
+	ub.setConstant(bl.get_blendshape_weight_size(), 1);
+	//We iteratively perform the two-step optimization until convergence. In our experiments, two iterations give satisfactory results.
+	for (int i = 0; i < iteration; i++) {
+		//std::cout << "iter : " <<  i << std::endl;
+		bl.blend(x, prev_bl);
+		//std::cout << "inside" << std::endl;
+		//std::cout << prev_bl.block(0, 0, 4, 3) << std::endl;
+		similarity_transform(prev_bl, lmk3d, R, Cb);
+		//std::cout << "R\n" << R << std::endl;
+		//std::cout << "Rt\n" << Cb << std::endl;
+		Eigen::MatrixXd out;
+		//add_to_pts(Cb, prev_bl, out);
+		////std::cout << (out - lmk3d).squaredNorm() << std::endl;
+		f.update_Rt(&Cb);
+		try {
+			svlr.minimize(f, x, fx, lb, ub);
+		}
+		catch (std::exception & e) {
+		}
+		////std::cout << " val : " << x << std::endl;
+	}
+	bl.update_prev_blendshapes(x);
+	result = x;
+	if ( Rt != nullptr )
+		*Rt = Cb;
 }

@@ -12,27 +12,17 @@
       "ctestCommandArgs": ""
     },
     {
-      "name": "x64-Debug-2",
+      "name": "x64-Debug2",
       "generator": "Ninja",
       "configurationType": "Debug",
-      "buildRoot": "${projectDir}\\out\\build\\${name}",
-      "installRoot": "${projectDir}\\out\\install\\${name}",
-      "cmakeCommandArgs": "-DCMAKE_PREFIX_PATH=\"D:/lib/libs\" -DCMAKE_BUILD_TYPE=DEBUG",
-      "buildCommandArgs": "",
-      "ctestCommandArgs": "",
-      "inheritEnvironments": [ "msvc_x64_x64" ]
-    },
-    {
-      "name": "x64-Debug-3",
-      "generator": "Ninja",
-      "configurationType": "Debug",
-      "buildRoot": "${projectDir}\\out\\build\\${name}",
-      "installRoot": "${projectDir}\\out\\install\\${name}",
-      "cmakeCommandArgs": "",
-      "buildCommandArgs": "",
-      "ctestCommandArgs": "",
       "inheritEnvironments": [ "msvc_x64_x64" ],
-      "variables": []
-    }
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "-DCMAKE_PREFIX_PATH=\"D:/lib/libs\"",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": ""
+    },
+    
   ]
+  
 }
